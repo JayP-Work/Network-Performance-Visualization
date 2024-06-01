@@ -3,6 +3,7 @@ $LATTEPivots = @("protocol", "sendMethod", "none")
 $CTSPivots = @("sessions", "none")
 $CPSPivots = @("none")
 $LagScopePivots = @("none")
+$IperfPivots = @("streams", "none")
 
 $DEFAULT_SAVEPATH = ".\visualization.xlsx"
 $DEFAULT_JSONPATH = ".\stats.xlsx"
@@ -30,6 +31,9 @@ $DEFAULT_JSONPATH = ".\stats.xlsx"
     } 
     elseif ($FakeBoundParameters.ContainsKey("CPS")) {
         return $CPSPivots | where {$_ -like "$WordsToComplete*"}
+    } 
+    elseif ($FakeBoundParameters.ContainsKey("IPERF")) {
+        return $IperfPivots | where {$_ -like "$WordsToComplete*"}
     } 
     else {
         return @("")
@@ -78,6 +82,7 @@ function processing_end {
         CTStraffic
         CPS
         Lagscope
+        IPERF
 
     This tool can aggregate data over several iterations of test runs, and can be used to visualize comparisons
     between a baseline and test set of data.
@@ -105,6 +110,7 @@ function processing_end {
         CTSTraffic: sessions, none
         LagScope:   protocol, none
         CPS:        none
+        IPERF:      streams
     
     The default for all cases is none.
 
@@ -143,9 +149,13 @@ function New-NetworkVisualization {
         [Parameter(Mandatory=$true, ParameterSetName="LagScope")]
         [Switch] $LagScope,
 
+        [Parameter(Mandatory=$true, ParameterSetName="IPERF")]
+        [Switch] $IPERF,
+
         [Parameter(Mandatory=$false, ParameterSetName="LagScope")]
         [Parameter(Mandatory=$false, ParameterSetName="LATTE")]
-        [Int] $NumHistogramBuckets = 50,
+        [Parameter(Mandatory=$false, ParameterSetName="IPERF")]
+        [Int] $NumHistogramBuckets = 20,
 
         [Parameter(Mandatory=$false)]
         [String] $BaselineDir = "", 
@@ -186,6 +196,7 @@ function New-NetworkVisualization {
 
         [Parameter(Mandatory=$false, ParameterSetName = "LATTE")]
         [Parameter(Mandatory=$false, ParameterSetName = "CPS")]
+        [Parameter(Mandatory=$false, ParameterSetName = "IPERF")]
         [Parameter(Mandatory=$false, ParameterSetName = "LagScope")]
         [Int] $SubsampleRate = -1, 
         
@@ -289,8 +300,10 @@ function New-NetworkVisualization {
             $tables += Format-Distribution -DataObj $processedData -OPivotKey $oPivotKey -Tool $tool -Prop "conn/s" -SubSampleRate $SubsampleRate
             $tables += Format-Distribution -DataObj $processedData -OPivotKey $oPivotKey -Tool $tool -Prop "close/s" -SubSampleRate $SubsampleRate
             $tables += Format-Histogram    -DataObj $processedData -OPivotKey $oPivotKey -Tool $tool  
+        } elseif ($tool -in @("IPERF")) { 
+            $tables += Format-Histogram    -DataObj $processedData -OPivotKey $oPivotKey -Tool $tool
         }
-        $tables  += Format-Percentiles -DataObj $processedData -OPivotKey $oPivotKey -Tool $tool 
+            $tables  += Format-Percentiles -DataObj $processedData -OPivotKey $oPivotKey -Tool $tool 
     }
     
     
@@ -362,8 +375,12 @@ function Confirm-Pivots ($Tool, $InnerPivot, $OuterPivot) {
             $LagScopePivots
             break
         }
+        "IPERF" {
+            $IperfPivots
+            break
+        }
     }
-
+    
     foreach ($curPivot in @($InnerPivot, $OuterPivot)) {
         if ($curPivot -notin $validPivots) {
             Write-Error "Invalid pivot property '$curPivot'. Supported pivots for $Tool are: $($validPivots -join ", ")." -ErrorAction "Stop"

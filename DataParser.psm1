@@ -135,6 +135,25 @@ function Get-RawData {
                 "noTable" = [Array]@("filename")
             }
         }
+        "IPERF" {
+            $parseFunc = ${Function:Parse-IPERF}
+
+            $output."meta" = @{
+                "props" = [Array] @(
+                    "throughput"
+                )
+                "units" = @{
+                    "throughput"  = "Mbps"
+                }
+                "goal" = @{
+                    "throughput"  = "increase"
+                }
+                "format" = @{
+                    "throughput"  = "#.0"
+                }
+                "noTable"  = [Array]@("filename", "streams")
+            }
+        }
     } 
 
     $PathCosts = @{
@@ -212,9 +231,8 @@ function Get-RawData {
     }
 
     Write-Progress -Activity "Parsing $($Mode) Data Files..." -Status "Done" -Id $id -PercentComplete 100
- 
     if ($output."data".Count -eq 0) {
-        Write-Error "Failed to parse any files in '$DirName'."
+        Write-Error "Failed to parse any files in blah'$DirName'."
     }
 
     $output.meta.innerPivotKeys = $InnerPivotKeys.Keys 
@@ -673,4 +691,49 @@ function Remove-EmptyStrings ($Arr) {
         }
     }
     return $newArr
+}
+
+<#
+.SYNOPSIS 
+    This function parses a single file containing Iperf3 data. It contains json data for
+    throughput and bandwidth, packaged into a 
+    HashTable, and returned. 
+.PARAMETER Filename
+    Path of the status log file to parse.
+.PARAMETER InnerPivotKeys
+    Set containing all inner pivot keys encountered across all data files
+.PARAMETER OuterPivotKeys
+    Set containing all outer pivot keys encountered across all data files
+.PARAMETER InnerPivot
+    Name of inner pivot property
+.PARAMETER OuterPivot
+    Name of outer pivot property
+#>
+function Parse-IPERF ([string] $FileName, $InnerPivot, $OuterPivot, $InnerPivotKeys, $OuterPivotKeys, $PathCosts, $Warmup, $Cooldown) {
+    $file = Get-Content $FileName
+    $filejson = $file | ConvertFrom-Json
+
+    [Int] $streams = $filejson."start".test_start.num_streams
+
+    $dataEntry = @{
+        "filename" = $FileName
+        "throughput" = [Array] @()
+        "streams" = $streams
+    }
+
+    $intervals = $filejson."intervals"
+
+    foreach ($grp in $intervals) {
+        $bps = [Decimal]($grp."sum".bits_per_second)
+        $Mbps = $bps / 1000000
+        $dataEntry."throughput" += $Mbps
+    } 
+
+    $iPivotKey = if ($dataEntry[$InnerPivot]) {$dataEntry[$InnerPivot]} else {""}
+    $oPivotKey = if ($dataEntry[$OuterPivot]) {$dataEntry[$OuterPivot]} else {""}
+
+    $InnerPivotKeys[$iPivotKey] = $true
+    $OuterPivotKeys[$oPivotKey] = $true
+    
+    return $dataEntry
 }
